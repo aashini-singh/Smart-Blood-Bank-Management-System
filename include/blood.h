@@ -1,10 +1,13 @@
-/* blood.h - Blood resource interface (DRAFT - owned by blood.c, Ananya) */
 #ifndef BLOOD_H
 #define BLOOD_H
 
-int  check_blood(const char *group, int units);    /* 1 = available, 0 = not */
-int  allocate_blood(const char *group, int units); /* 1 = allocated, 0 = shortage */
+int check_blood(const char *group, int units);
+int allocate_blood(const char *group, int units);
 void release_blood(const char *group, int units);
 void print_inventory(void);
+
+/* Returns the currently available units for a blood group.
+   Returns -1 if the blood group is invalid. */
+int get_blood_units(const char *group);
 
 #endif

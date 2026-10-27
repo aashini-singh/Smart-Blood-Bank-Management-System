@@ -13,6 +13,7 @@
  *         and average waiting / turnaround time.
  */
 #include <stdio.h>
+#include "banker.h"
 #include <ctype.h>
 #include "pcb.h"
 #include "blood.h"
@@ -168,16 +169,29 @@ int scheduler_run(int commit) {
 
         if (commit) {
             set_state(p, RUNNING);
-            if (!allocate_blood(p->blood_group, p->units)) {
-                set_state(p, WAITING);
-                printf("        Reason: RESOURCE_UNAVAILABLE (%s x %d units)\n",
-                       p->blood_group, p->units);
-                n_waiting++;
-                continue;
-            }
-            printf("        %d unit(s) of %s allocated to P%d\n",
-                   p->units, p->blood_group, p->pid);
-        }
+            if (!banker_request(p->pid, p->blood_group, p->units)) {
+    set_state(p, WAITING);
+
+    printf("        Reason: RESOURCE_UNAVAILABLE or UNSAFE_REQUEST (%s x %d units)\n",
+           p->blood_group, p->units);
+
+    n_waiting++;
+    continue;
+}
+
+printf("        %d unit(s) of %s allocated to P%d\n",
+       p->units, p->blood_group, p->pid);
+
+        //     if (!allocate_blood(p->blood_group, p->units)) {
+        //         set_state(p, WAITING);
+        //         printf("        Reason: RESOURCE_UNAVAILABLE (%s x %d units)\n",
+        //                p->blood_group, p->units);
+        //         n_waiting++;
+        //         continue;
+        //     }
+        //     printf("        %d unit(s) of %s allocated to P%d\n",
+        //            p->units, p->blood_group, p->pid);
+        // }
 
         p->start_time      = clock;
         clock             += p->burst_time;
@@ -192,7 +206,11 @@ int scheduler_run(int commit) {
         n_slots++;
         done[n_done++] = p;
 
-        if (commit) set_state(p, TERMINATED);
+        if (commit) {
+    banker_release(p->pid, p->blood_group, p->units);
+    set_state(p, TERMINATED);
+}
+        // if (commit) set_state(p, TERMINATED);
     }
 
     if (n_done > 0) {

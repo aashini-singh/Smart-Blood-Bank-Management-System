@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-
+#include "banker.h"
 #include "pcb.h"
 #include "blood.h"
 #include "scheduler.h"
@@ -141,6 +141,10 @@ static void handle_request(char *args)
         printf("Failed to create process.\n");
         return;
     }
+    
+    if (!banker_register_process(pid, group, units)) {
+    printf("Warning: Banker registration failed for PID %d.\n", pid);
+}
 
     printf("\nBlood request created successfully.\n");
     printf("PID      : %d\n", pid);
