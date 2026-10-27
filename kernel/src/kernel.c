@@ -208,20 +208,311 @@ static void parse_request(void)
     handle_blood_request(group, units);
 }
 
+
+#define MAX_PROCESSES 16
+#define PROCESS_NAME_SIZE 24
+
+typedef enum {
+    PROC_READY,
+    PROC_DONE
+} ProcessState;
+
+typedef struct {
+    int pid;
+    char name[PROCESS_NAME_SIZE];
+    ProcessState state;
+} KernelProcess;
+
+static KernelProcess processes[MAX_PROCESSES];
+static int process_count = 0;
+static int next_pid = 1;
+
+static const char *process_state_name(ProcessState state)
+{
+    return state == PROC_READY ? "READY" : "DONE";
+}
+
+static int add_process(const char *name)
+{
+    if (process_count >= MAX_PROCESSES) {
+        print("\nProcess table full.\n");
+        return 0;
+    }
+
+    KernelProcess *p = &processes[process_count];
+    p->pid = next_pid++;
+    p->state = PROC_READY;
+
+    size_t i = 0;
+    while (name[i] && i < PROCESS_NAME_SIZE - 1) {
+        p->name[i] = name[i];
+        i++;
+    }
+    p->name[i] = '\0';
+    process_count++;
+
+    print("\nProcess created: PID ");
+    if (p->pid >= 10)
+        put_char((char)('0' + p->pid / 10));
+    put_char((char)('0' + p->pid % 10));
+    print("\n");
+    return 1;
+}
+
+static void show_processes(void)
+{
+    print("\nPID  NAME                    STATE\n");
+
+    if (process_count == 0) {
+        print("No processes registered.\n");
+        return;
+    }
+
+    for (int i = 0; i < process_count; i++) {
+        KernelProcess *p = &processes[i];
+
+        if (p->pid >= 10)
+            put_char((char)('0' + p->pid / 10));
+        put_char((char)('0' + p->pid % 10));
+
+        print("    ");
+        print(p->name);
+
+        size_t n = 0;
+        while (p->name[n]) n++;
+        while (n++ < PROCESS_NAME_SIZE - 1) put_char(' ');
+
+        print(" ");
+        print(process_state_name(p->state));
+        print("\n");
+    }
+}
+
+static void schedule_fcfs(void)
+{
+    int found = 0;
+    print("\nFCFS scheduling order:\n");
+
+    for (int i = 0; i < process_count; i++) {
+        if (processes[i].state != PROC_READY) continue;
+
+        print(" -> ");
+        print(processes[i].name);
+        processes[i].state = PROC_DONE;
+        found = 1;
+    }
+
+    if (!found) print("No READY processes.");
+    print("\nScheduling demonstration complete.\n");
+}
+
+static void parse_proc_add(void)
+{
+    size_t pos = 9; /* After "proc add " */
+    char name[PROCESS_NAME_SIZE];
+    size_t i = 0;
+
+    while (input[pos] == ' ') pos++;
+
+    while (input[pos] && input[pos] != ' ' &&
+           i < PROCESS_NAME_SIZE - 1) {
+        name[i++] = input[pos++];
+    }
+
+    if (i == 0 || input[pos] != '\0') {
+        print("\nUsage: proc add NAME (one-word name)\n");
+        return;
+    }
+
+    name[i] = '\0';
+    add_process(name);
+}
+
+
+/* First-fit allocator demonstration using simulated memory blocks. */
+#define MEMORY_BLOCK_COUNT 5
+
+static const int memory_block_sizes[MEMORY_BLOCK_COUNT] = {
+    100, 500, 200, 300, 600
+};
+
+static int memory_block_used[MEMORY_BLOCK_COUNT] = {0};
+
+static void print_number(int value)
+{
+    char digits[10];
+    int count = 0;
+
+    if (value == 0) {
+        put_char('0');
+        return;
+    }
+
+    while (value > 0 && count < 10) {
+        digits[count++] = (char)('0' + value % 10);
+        value /= 10;
+    }
+
+    while (count > 0) {
+        put_char(digits[--count]);
+    }
+}
+
+static void show_memory(void)
+{
+    print("\nFirst-Fit Memory Blocks\n");
+    print("BLOCK   SIZE   STATUS\n");
+
+    for (int i = 0; i < MEMORY_BLOCK_COUNT; i++) {
+        print("  ");
+        print_number(i + 1);
+        print("      ");
+        print_number(memory_block_sizes[i]);
+        print("    ");
+        print(memory_block_used[i] ? "ALLOCATED" : "FREE");
+        print("\n");
+    }
+}
+
+static void allocate_memory(int requested_size)
+{
+    if (requested_size <= 0) {
+        print("\nSize must be greater than zero.\n");
+        return;
+    }
+
+    for (int i = 0; i < MEMORY_BLOCK_COUNT; i++) {
+        if (!memory_block_used[i] &&
+            memory_block_sizes[i] >= requested_size) {
+            memory_block_used[i] = 1;
+
+            print("\nFirst-fit allocation successful.\n");
+            print("Block: ");
+            print_number(i + 1);
+            print("\nBlock size: ");
+            print_number(memory_block_sizes[i]);
+            print("\nRequested size: ");
+            print_number(requested_size);
+            print("\nUnused space in block: ");
+            print_number(memory_block_sizes[i] - requested_size);
+            print("\n");
+            return;
+        }
+    }
+
+    print("\nAllocation failed: no free block is large enough.\n");
+}
+
+static void reset_memory(void)
+{
+    for (int i = 0; i < MEMORY_BLOCK_COUNT; i++) {
+        memory_block_used[i] = 0;
+    }
+
+    print("\nMemory demonstration reset. All blocks are FREE.\n");
+}
+
+static void parse_memory_command(void)
+{
+    /* Expected: mem alloc SIZE */
+    const char *prefix = "mem alloc ";
+    (void)prefix;
+
+    size_t pos = 10;
+
+    if (input_length <= pos) {
+        print("\nUsage: mem | mem alloc SIZE | mem reset\n");
+        return;
+    }
+
+    int size = 0;
+
+    while (input[pos] >= '0' && input[pos] <= '9') {
+        size = size * 10 + input[pos] - '0';
+        if (size > 100000) {
+            print("\nRequested size is too large.\n");
+            return;
+        }
+        pos++;
+    }
+
+    while (input[pos] == ' ') pos++;
+
+    if (input[pos] != '\0' || size <= 0) {
+        print("\nUsage: mem alloc SIZE\n");
+        return;
+    }
+
+    allocate_memory(size);
+}
+
+
+/* FCFS disk scheduling demonstration using cylinder requests. */
+#define DISK_REQUEST_COUNT 5
+
+static const int disk_requests[DISK_REQUEST_COUNT] = {
+    98, 183, 37, 122, 14
+};
+
+static void run_disk_fcfs(void)
+{
+    int head = 53;
+    int total_movement = 0;
+
+    print("\nFCFS Disk Scheduling\n");
+    print("Initial head position: ");
+    print_number(head);
+    print("\nRequest order: ");
+
+    for (int i = 0; i < DISK_REQUEST_COUNT; i++) {
+        int target = disk_requests[i];
+        int movement = target - head;
+
+        if (movement < 0) movement = -movement;
+        total_movement += movement;
+
+        print_number(target);
+        if (i < DISK_REQUEST_COUNT - 1) print(" -> ");
+
+        head = target;
+    }
+
+    print("\nTotal head movement: ");
+    print_number(total_movement);
+    print(" cylinders\n");
+}
+
+
 static void show_help(void)
 {
-    print("\nAvailable commands:\n");
-    print("  help    - List commands\n");
-    print("  clear   - Clear terminal\n");
-    print("  about   - About RaktSetu Mini OS\n");
-    print("  status  - Kernel status\n");
-    print("  blood   - Show blood inventory\n");
-    print("  request - Request blood: request GROUP UNITS\n");
+    print("\n");
+    print("============================================================\n");
+    print("               RAKTSETU MINI OS - COMMANDS\n");
+    print("============================================================\n");
+    print(" SYSTEM                 BLOOD BANK\n");
+    print(" help   - Show help     blood - Show inventory\n");
+    print(" clear  - Clear screen  request GROUP UNITS\n");
+    print(" about  - About OS      - Request blood units\n");
+    print(" status - Kernel status\n");
+    print("------------------------------------------------------------\n");
+    print(" PROCESS MANAGEMENT    MEMORY MANAGEMENT\n");
+    print(" ps       - List procs  mem - Show memory blocks\n");
+    print(" proc add NAME         mem alloc SIZE\n");
+    print(" - Register process    - First-Fit allocation\n");
+    print(" schedule - FCFS demo  mem reset - Reset memory\n");
+    print("------------------------------------------------------------\n");
+    print(" DISK SCHEDULING\n");
+    print(" disk - Run FCFS disk scheduling\n");
+    print("------------------------------------------------------------\n");
+    print(" NOTE: Scheduling, memory and disk are simulations.\n");
+    print("============================================================\n");
 }
 
 static void execute_command(void)
 {
     input[input_length] = '\0';
+
+
 
     if (equals(input, "help")) {
         show_help();
@@ -237,8 +528,32 @@ static void execute_command(void)
         print("\nKeyboard: PS/2 polling enabled");
         print("\nBlood inventory: INITIALIZED");
         print("\nProcess scheduler: NOT INITIALIZED\n");
+    } else if (equals(input, "mem")) {
+        show_memory();
+    } else if (equals(input, "mem reset")) {
+        reset_memory();
+    } else if (input_length > 10 &&
+               input[0] == 'm' && input[1] == 'e' &&
+               input[2] == 'm' && input[3] == ' ' &&
+               input[4] == 'a' && input[5] == 'l' &&
+               input[6] == 'l' && input[7] == 'o' &&
+               input[8] == 'c' && input[9] == ' ') {
+        parse_memory_command();
+    } else if (equals(input, "disk")) {
+        run_disk_fcfs();
     } else if (equals(input, "blood")) {
         show_blood();
+    } else if (equals(input, "ps")) {
+        show_processes();
+    } else if (equals(input, "schedule")) {
+        schedule_fcfs();
+    } else if (input_length >= 9 &&
+               input[0] == 'p' && input[1] == 'r' &&
+               input[2] == 'o' && input[3] == 'c' &&
+               input[4] == ' ' && input[5] == 'a' &&
+               input[6] == 'd' && input[7] == 'd' &&
+               input[8] == ' ') {
+        parse_proc_add();
     } else if (input_length >= 8 &&
                input[0] == 'r' && input[1] == 'e' &&
                input[2] == 'q' && input[3] == 'u' &&
@@ -289,13 +604,17 @@ void kernel_main(void)
             continue;
         }
 
-        char c = scancode_to_ascii(code);
-        if (c == 0) {
+        /* Handle spacebar explicitly and store it in the command. */
+        if (code == 0x39) {
+            if (input_length < INPUT_SIZE - 1) {
+                input[input_length++] = ' ';
+                put_char(' ');
+            }
             continue;
         }
 
-        if (code == 0x39) {
-            put_char('_');
+        char c = scancode_to_ascii(code);
+        if (c == 0) {
             continue;
         }
 
