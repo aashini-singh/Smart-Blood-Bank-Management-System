@@ -165,3 +165,13 @@ void banker_release(int pid, const char *group, int units)
 
     printf("Released %d units for P%d.\n", units, pid);
 }
+
+int banker_get_allocation(int pid)
+{
+    int index = find_process_index(pid);
+
+    if (index < 0 || !registered[index])
+        return -1;
+
+    return allocation[index];
+}

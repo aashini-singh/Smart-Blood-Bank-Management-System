@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "deadlock.h"
 #include "banker.h"
 #include "pcb.h"
 #include "blood.h"
@@ -35,7 +36,9 @@ static Priority parse_priority(const char *text)
 
 
 static void print_help(void)
+
 {
+
     printf("\n");
     printf("========== RaktSetu Commands ==========\n");
     printf("help                         Show commands\n");
@@ -43,9 +46,13 @@ static void print_help(void)
     printf("                             Create blood request\n");
     printf("ps                           Show process table\n");
     printf("blood                        Show blood inventory\n");
+    printf("donate <group> <units>       Add donated blood\n");
     printf("schedule <fcfs|priority>     Select scheduler\n");
+    printf("deadlock                     Check for blocked processes\n");
+printf("recover                      Show recovery status\n");
     printf("run                          Execute READY processes\n");
     printf("exit                         Exit program\n");
+
     printf("========================================\n");
 }
 
@@ -141,7 +148,7 @@ static void handle_request(char *args)
         printf("Failed to create process.\n");
         return;
     }
-    
+
     if (!banker_register_process(pid, group, units)) {
     printf("Warning: Banker registration failed for PID %d.\n", pid);
 }
@@ -154,6 +161,51 @@ static void handle_request(char *args)
     printf("Priority : %s\n", priority_name(priority));
 }
 
+
+```c
+static void wake_waiting_processes(const char *group)
+{
+    for (int i = 0; i < process_count; i++) {
+        PCB *p = &process_table[i];
+
+        if (p->state == WAITING &&
+            strcmp(p->blood_group, group) == 0 &&
+            get_blood_units(group) >= p->units) {
+
+            set_state(p, READY);
+            printf("P%d (%s) moved from WAITING to READY.\n",
+                   p->pid, p->patient);
+        }
+    }
+}
+```
+/* -------------------------------------------------
+ * DONATE command
+ * ------------------------------------------------- */
+
+static void handle_donate(char *args)
+{
+    char group[4];
+    int units;
+
+    if (sscanf(args, "%3s %d", group, &units) != 2 || units <= 0) {
+        printf("Usage: donate <group> <units>\n");
+        printf("Example: donate O- 5\n");
+        return;
+    }
+
+    /* Validate the blood group before changing inventory. */
+    if (check_blood(group, 0) < 0) {
+        printf("Invalid blood group.\n");
+        return;
+    }
+
+    release_blood(group, units);
+
+    printf("Donation recorded: %d units of %s.\n", units, group);
+    wake_waiting_processes(group);
+    print_inventory();
+}
 
 /* -------------------------------------------------
  * SCHEDULE command
@@ -239,6 +291,13 @@ int main(void)
             print_process_table();
         }
 
+        else if (strcmp(input, "deadlock") == 0) {
+    detect_deadlock();
+}
+else if (strcmp(input, "recover") == 0) {
+    recover_deadlock();
+}
+
 
         /* ---------------- BLOOD ---------------- */
 
@@ -248,6 +307,12 @@ int main(void)
             print_inventory();
             printf("=====================================\n");
         }
+
+        /* ---------------- DONATE ---------------- */
+
+else if (strncmp(input, "donate ", 7) == 0) {
+    handle_donate(input + 7);
+}
 
 
         /* ---------------- RUN ---------------- */
